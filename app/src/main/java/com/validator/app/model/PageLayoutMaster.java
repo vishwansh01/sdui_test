@@ -2,6 +2,7 @@ package com.validator.app.model;
 
 //import com.networknt.schema.JsonType;
 //import io.hypersistence.utils.hibernate.type.json.JsonType;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.*;
 //import org.hibernate.annotations.Type;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -30,7 +31,7 @@ public class PageLayoutMaster {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "layout_tree", columnDefinition = "jsonb", nullable = false)
-    private LayoutNode layoutTree;
+    private JsonNode layoutTree;
 
     @Column(nullable = false) private String status;
 
@@ -48,5 +49,10 @@ public class PageLayoutMaster {
 
     protected PageLayoutMaster() {} // JPA required
 
-    public LayoutNode getLayoutTree() { return layoutTree; }
+    public JsonNode getLayoutTree() {
+        return layoutTree;
+    }
+    public String getPageName() {
+        return pageName;
+    }
 }
