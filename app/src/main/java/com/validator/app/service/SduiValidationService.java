@@ -32,16 +32,9 @@ public class SduiValidationService {
         this.objectMapper = objectMapper;
     }
 
-    // ─── 1. MAIN ENTRY POINT ──────────────────────────────────────────────────
-
-    /**
-     * Call this method after fetching your components from the database to validate them
-     * against your custom JSON rules before sending them to the frontend.
-     */
     public void validateFetchedComponents(List<ComponentStore> components, JsonNode layoutTree) {
         if (components == null || components.isEmpty()) return;
 
-        // Fetch the custom rules from the component_interface table
         List<String> requiredTypes = components.stream()
                 .map(ComponentStore::getComponentType)
                 .distinct()
@@ -49,19 +42,16 @@ public class SduiValidationService {
 
         List<ComponentInterface> interfaces = interfaceRepo.findByComponentTypeIn(requiredTypes);
 
-        // Map Component Type to its raw JSON rules
         Map<String, String> schemaMap = interfaces.stream()
                 .collect(Collectors.toMap(
                         ComponentInterface::getComponentType,
                         ComponentInterface::getJsonSchema
                 ));
 
-        // Validate tree structure first (if a layout tree is provided)
         if (layoutTree != null) {
             validateLayoutTree(layoutTree, schemaMap);
         }
 
-        // Validate individual payloads
         for (ComponentStore comp : components) {
             String rawRules = schemaMap.get(comp.getComponentType());
 
@@ -78,20 +68,16 @@ public class SduiValidationService {
         }
     }
 
-    // ─── 2. TREE STRUCTURE VALIDATION ─────────────────────────────────────────
 
     private void validateLayoutTree(JsonNode node, Map<String, String> schemaMap) {
         if (!node.has("type")) return;
         String type = node.get("type").asText();
 
-        // Parse the rules for this specific component type
         String rawRules = schemaMap.get(type);
-        if (rawRules == null) return; // Skip if no rules defined (or throw error if strictly required)
+        if (rawRules == null) return;
 
         try {
             JsonNode rules = objectMapper.readTree(rawRules);
-
-            // Check allowed children
             if (node.has("children") && node.get("children").isArray() && node.get("children").size() > 0) {
                 if (!rules.has("allowedChildren")) {
                     throw new RuntimeException("Component '" + type + "' is not allowed to have children.");
@@ -113,7 +99,6 @@ public class SduiValidationService {
                         throw new RuntimeException("Invalid layout: '" + childType + "' cannot be placed inside '" + type + "'");
                     }
 
-                    // Recursively validate child node trees
                     validateLayoutTree(child, schemaMap);
                 }
             }
@@ -122,12 +107,10 @@ public class SduiValidationService {
         }
     }
 
-    // ─── 3. RECURSIVE DATA PAYLOAD VALIDATION ─────────────────────────────────
 
     private void validatePayloadDynamically(JsonNode rules, JsonNode data, String currentPath) {
         if (rules == null || data == null || data.isNull()) return;
 
-        // 1. Check REQUIRED fields
         if (rules.has("required")) {
             for (JsonNode requiredNode : rules.get("required")) {
                 String requiredField = requiredNode.asText();
@@ -137,7 +120,6 @@ public class SduiValidationService {
             }
         }
 
-        // 2. Check ALLOWED TYPES (with recursion for Objects)
         if (rules.has("allowedTypes")) {
             JsonNode allowedTypes = rules.get("allowedTypes");
             Iterator<Map.Entry<String, JsonNode>> fields = data.fields();
@@ -162,7 +144,6 @@ public class SduiValidationService {
                     throw new RuntimeException("Field '" + fieldPath + "' must be a boolean");
                 }
 
-                // Handle nested objects (like containerStyle or placement)
                 if (expectedType.equals("object")) {
                     if (!fieldValue.isObject()) {
                         throw new RuntimeException("Field '" + fieldPath + "' must be an object");
@@ -170,14 +151,12 @@ public class SduiValidationService {
 
                     if (rules.has("nestedRules") && rules.get("nestedRules").has(fieldName)) {
                         JsonNode nestedRules = rules.get("nestedRules").get(fieldName);
-                        // Recursive call
                         validatePayloadDynamically(nestedRules, fieldValue, fieldPath);
                     }
                 }
             }
         }
 
-        // 3. Check NUMBER RANGES
         if (rules.has("numberRanges")) {
             JsonNode numberRanges = rules.get("numberRanges");
             Iterator<Map.Entry<String, JsonNode>> rangeFields = numberRanges.fields();
@@ -201,7 +180,6 @@ public class SduiValidationService {
             }
         }
 
-        // 4. Check ALLOWED VALUES (Enums)
         if (rules.has("allowedValues")) {
             JsonNode allowedValues = rules.get("allowedValues");
             Iterator<Map.Entry<String, JsonNode>> enumFields = allowedValues.fields();
