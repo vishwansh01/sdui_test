@@ -44,6 +44,7 @@ public class ComponentStore {
     public String getComponentType() { return componentType; }
     public Integer getSchemaVersion() { return schemaVersion; }
     public JsonNode getPayload() { return payload; }
+    public Integer getVersion(){return schemaVersion;}
 
 
 }

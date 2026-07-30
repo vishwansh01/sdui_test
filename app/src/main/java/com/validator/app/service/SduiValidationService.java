@@ -32,6 +32,42 @@ public class SduiValidationService {
         this.objectMapper = objectMapper;
     }
 
+//    public void validateFetchedComponents(List<ComponentStore> components, JsonNode layoutTree) {
+//        if (components == null || components.isEmpty()) return;
+//
+//        List<String> requiredTypes = components.stream()
+//                .map(ComponentStore::getComponentType)
+//                .distinct()
+//                .collect(Collectors.toList());
+//
+//        List<ComponentInterface> interfaces = interfaceRepo.findByComponentTypeIn(requiredTypes);
+//
+//        Map<String, String> schemaMap = interfaces.stream()
+//                .collect(Collectors.toMap(
+//                        ComponentInterface::getComponentType,
+//                        ComponentInterface::getJsonSchema
+//                ));
+//
+//        if (layoutTree != null) {
+//            validateLayoutTree(layoutTree, schemaMap);
+//        }
+//
+//        for (ComponentStore comp : components) {
+//            String rawRules = schemaMap.get(comp.getComponentType());
+//
+//            if (rawRules == null) {
+//                throw new IllegalStateException("Missing schema interface for component type: " + comp.getComponentType());
+//            }
+//
+//            try {
+//                JsonNode interfaceRules = objectMapper.readTree(rawRules);
+//                validatePayloadDynamically(interfaceRules, comp.getPayload(), comp.getComponentType());
+//            } catch (Exception e) {
+//                throw new RuntimeException("Validation failed for ID " + comp.getId() + ": " + e.getMessage());
+//            }
+//        }
+//    }
+
     public void validateFetchedComponents(List<ComponentStore> components, JsonNode layoutTree) {
         if (components == null || components.isEmpty()) return;
 
@@ -42,21 +78,28 @@ public class SduiValidationService {
 
         List<ComponentInterface> interfaces = interfaceRepo.findByComponentTypeIn(requiredTypes);
 
-        Map<String, String> schemaMap = interfaces.stream()
+        Map<String, String> versionedSchemaMap = interfaces.stream()
                 .collect(Collectors.toMap(
-                        ComponentInterface::getComponentType,
+                        i -> i.getComponentType() + "_" + i.getVersion(),
                         ComponentInterface::getJsonSchema
                 ));
 
+        Map<String, String> idToVersionMap = components.stream()
+                .collect(Collectors.toMap(
+                        c -> c.getId().toString(),
+                        c -> String.valueOf(c.getVersion())
+                ));
+
         if (layoutTree != null) {
-            validateLayoutTree(layoutTree, schemaMap);
+            validateLayoutTree(layoutTree, versionedSchemaMap, idToVersionMap);
         }
 
         for (ComponentStore comp : components) {
-            String rawRules = schemaMap.get(comp.getComponentType());
+            String lookupKey = comp.getComponentType() + "_" + comp.getVersion();
+            String rawRules = versionedSchemaMap.get(lookupKey);
 
             if (rawRules == null) {
-                throw new IllegalStateException("Missing schema interface for component type: " + comp.getComponentType());
+                throw new IllegalStateException("Missing schema interface for component: " + lookupKey);
             }
 
             try {
@@ -69,18 +112,63 @@ public class SduiValidationService {
     }
 
 
-    private void validateLayoutTree(JsonNode node, Map<String, String> schemaMap) {
+//    private void validateLayoutTree(JsonNode node, Map<String, String> schemaMap) {
+//        if (!node.has("type")) return;
+//        String type = node.get("type").asText();
+//
+//        String rawRules = schemaMap.get(type);
+//        if (rawRules == null) return;
+//
+//        try {
+//            JsonNode rules = objectMapper.readTree(rawRules);
+//            if (node.has("children") && node.get("children").isArray() && node.get("children").size() > 0) {
+//                if (!rules.has("allowedChildren")) {
+//                    throw new RuntimeException("Component '" + type + "' is not allowed to have children.");
+//                }
+//
+//                JsonNode allowedChildren = rules.get("allowedChildren");
+//                for (JsonNode child : node.get("children")) {
+//                    String childType = child.get("type").asText();
+//                    boolean isAllowed = false;
+//
+//                    for (JsonNode allowed : allowedChildren) {
+//                        if (allowed.asText().equals(childType)) {
+//                            isAllowed = true;
+//                            break;
+//                        }
+//                    }
+//
+//                    if (!isAllowed) {
+//                        throw new RuntimeException("Invalid layout: '" + childType + "' cannot be placed inside '" + type + "'");
+//                    }
+//
+//                    validateLayoutTree(child, schemaMap);
+//                }
+//            }
+//        } catch (Exception e) {
+//            throw new RuntimeException("Tree validation failed: " + e.getMessage());
+//        }
+//    }
+    private void validateLayoutTree(JsonNode node, Map<String, String> schemaMap, Map<String, String> idToVersionMap) {
         if (!node.has("type")) return;
         String type = node.get("type").asText();
 
-        String rawRules = schemaMap.get(type);
+        String version = "1";
+        if (node.has("component_id")) {
+            String compId = node.get("component_id").asText();
+            version = idToVersionMap.getOrDefault(compId, "1");
+        }
+
+        String lookupKey = type + "_" + version;
+        String rawRules = schemaMap.get(lookupKey);
+
         if (rawRules == null) return;
 
         try {
             JsonNode rules = objectMapper.readTree(rawRules);
             if (node.has("children") && node.get("children").isArray() && node.get("children").size() > 0) {
                 if (!rules.has("allowedChildren")) {
-                    throw new RuntimeException("Component '" + type + "' is not allowed to have children.");
+                    throw new RuntimeException("Component '" + lookupKey + "' is not allowed to have children.");
                 }
 
                 JsonNode allowedChildren = rules.get("allowedChildren");
@@ -96,10 +184,10 @@ public class SduiValidationService {
                     }
 
                     if (!isAllowed) {
-                        throw new RuntimeException("Invalid layout: '" + childType + "' cannot be placed inside '" + type + "'");
+                        throw new RuntimeException("Invalid layout: '" + childType + "' cannot be placed inside '" + lookupKey + "'");
                     }
 
-                    validateLayoutTree(child, schemaMap);
+                    validateLayoutTree(child, schemaMap, idToVersionMap);
                 }
             }
         } catch (Exception e) {

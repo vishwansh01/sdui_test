@@ -38,6 +38,6 @@ public class ComponentInterface {
     protected ComponentInterface() {}
 
     public String getComponentType() { return componentType; }
-    public Integer getSchemaVersion() { return schemaVersion; }
+    public Integer getVersion() { return schemaVersion; }
     public String getJsonSchema() { return jsonSchema; }
 }
